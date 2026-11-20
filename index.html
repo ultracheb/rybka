@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Риба в чоботях</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas { display: block; touch-action: none; cursor: crosshair; }
+
+  #hud { position: fixed; top: 12px; left: 0; right: 0; text-align: center; pointer-events: none; color: #0b3a5c; padding: 0 12px; }
+  #hud h1 { margin: 0; font-size: clamp(20px, 5vw, 30px); text-shadow: 0 2px 0 #fff8; }
+  #hint { margin-top: 8px; display: inline-block; background: #ffffffd9; padding: 6px 14px; border-radius: 999px;
+    font-weight: 600; font-size: clamp(14px, 3.6vw, 18px); }
+  #hint.hot { background: #ff5a4e; color: #fff; animation: pulse .35s ease-in-out infinite alternate; }
+  @keyframes pulse { to { transform: scale(1.08); } }
+
+  #bang { position: fixed; transform: translate(-50%, -100%); pointer-events: none; display: none;
+    font-weight: 900; font-size: 44px; color: #ff3b30; text-shadow: 0 3px 0 #fff; }
+  #msg { position: fixed; left: 50%; top: 32%; transform: translateX(-50%); pointer-events: none; opacity: 0;
+    background: #fff; color: #0b3a5c; padding: 8px 16px; border-radius: 14px; font-weight: 700; font-size: 20px; }
+  #msg.show { animation: pop 1.2s ease-out forwards; }
+  @keyframes pop { 0% { opacity: 0; margin-top: 10px; } 15% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -30px; } }
+
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #0b3a5c; font-size: 20px; }
+
+  /* certificate */
+  .cert { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 35, 58, .72); padding: 16px; overflow: auto; }
+  .cert[hidden] { display: none; }
+  .card { width: min(560px, 100%); background: #fffaf0; border-radius: 10px; padding: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    animation: appear .5s ease-out; }
+  @keyframes appear { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .card { text-align: center; }
+  .icon { font-size: 46px; margin: 6px 0 10px; }
+  #cImg { display: block; width: 100%; max-height: 65vh; object-fit: contain; border-radius: 6px; }
+  #cNoImg { display: none; font-size: 80px; padding: 40px 0; border: 3px dashed #d9c79a; border-radius: 8px; }
+  .btns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+  .btns button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 999px; border: 0; cursor: pointer; background: #2a86bf; color: #fff; }
+  .btns button.alt { background: #e3eef6; color: #1f4d73; }
+  .confetti { position: fixed; top: -40px; z-index: 60; font-size: 24px; pointer-events: none; animation: fall linear forwards; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(540deg); } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+
+<div id="loading">Риба натягує чоботи…</div>
+<div id="hud">
+  <h1>Риба в чоботях 🐟👢</h1>
+  <div id="hint">Тицни у воду біля людини, щоб закинути вудку</div>
+</div>
+<div id="bang">!</div>
+<div id="msg"></div>
+
+<div id="cert" class="cert" hidden>
+  <div class="card">
+    <div class="icon">🐟👢🎣🎉</div>
+    <img id="cImg" alt="">
+    <div id="cNoImg">🖼️</div>
+    <div class="btns"><button id="againBtn">Зіграти ще раз 🎣</button></div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ====== ТУТ МІНЯЄМО ======
+const CONFIG = {
+  image: 'certificate.jpg',   // картинка сертифіката, покласти поруч з index.html
+};
+// =================================
+
+const $ = (id) => document.getElementById(id);
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+$('loading').remove();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fdcff);
+scene.fog = new THREE.Fog(0x9fdcff, 28, 65);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x5a8a4a, 1.0));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+sun.position.set(6, 14, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 50 });
+sun.shadow.camera.updateProjectionMatrix();
+scene.add(sun);
+
+const mat = (c) => new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 0.85 });
+function mesh(geo, color, parent, pos = [0, 0, 0], rot = [0, 0, 0], scale = null) {
+  const m = new THREE.Mesh(geo, mat(color));
+  m.position.set(...pos); m.rotation.set(...rot);
+  if (scale) m.scale.set(...scale);
+  m.castShadow = true; m.receiveShadow = true;
+  parent.add(m);
+  return m;
+}
+
+// ---------- world ----------
+const water = mesh(new THREE.PlaneGeometry(240, 240), 0x3a9ad9, scene, [0, 0, 0], [-Math.PI / 2, 0, 0]);
+water.material.roughness = 0.35; water.castShadow = false;
+
+mesh(new THREE.BoxGeometry(90, 1, 16), 0xe8cf8a, scene, [0, -0.2, 7]);          // пясок, верх y=0.3
+mesh(new THREE.BoxGeometry(90, 1, 10), 0x6cbf5a, scene, [0, -0.12, 14]);        // трава
+mesh(new THREE.BoxGeometry(110, 2, 14), 0x5aa84a, scene, [0, 0, -38]);          // далёкі бераг
+
+for (let i = 0; i < 18; i++) {                                                   // дрэвы
+  const x = -40 + i * 4.7 + Math.random() * 2, z = -33 - Math.random() * 5;
+  const s = 0.8 + Math.random() * 0.7;
+  mesh(new THREE.CylinderGeometry(0.2 * s, 0.25 * s, 1.4 * s, 6), 0x7a4a21, scene, [x, 1 + 0.7 * s, z]);
+  mesh(new THREE.ConeGeometry(1.3 * s, 3 * s, 7), i % 3 ? 0x2f8a46 : 0x3f9e52, scene, [x, 1 + 1.4 * s + 1.5 * s, z]);
+}
+for (let i = 0; i < 9; i++) {                                                    // гарлачыкі
+  const p = mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.04, 10), 0x4fae4f, scene,
+    [-12 + Math.random() * 24, 0.03, -5 - Math.random() * 16]);
+  p.castShadow = false;
+  if (i % 3 === 0) mesh(new THREE.SphereGeometry(0.15, 6, 4), 0xffb6d0, scene, [p.position.x + 0.15, 0.12, p.position.z]);
+}
+for (let i = 0; i < 26; i++) {                                                   // трыснёг
+  const x = (Math.random() < 0.5 ? -1 : 1) * (2.5 + Math.random() * 14);
+  const h = 0.8 + Math.random() * 0.9;
+  mesh(new THREE.CylinderGeometry(0.03, 0.04, h, 4), 0x5f9b3a, scene, [x, h / 2, -1.2 - Math.random() * 0.8], [Math.random() * 0.2 - 0.1, 0, Math.random() * 0.2 - 0.1]);
+}
+
+// ---------- рыба ў сапагах ----------
+const fish = new THREE.Group();
+fish.position.set(0, 0.3, 0);
+scene.add(fish);
+const fishBody = new THREE.Group();
+fish.add(fishBody);
+mesh(new THREE.SphereGeometry(1, 18, 12), 0x3fa7e0, fishBody, [0, 1.3, 0], [0, 0, 0], [0.55, 0.52, 0.9]);
+mesh(new THREE.SphereGeometry(1, 14, 10), 0x9fdcf7, fishBody, [0, 1.12, -0.05], [0, 0, 0], [0.45, 0.32, 0.75]);
+mesh(new THREE.ConeGeometry(0.35, 0.6, 3), 0xff9a3c, fishBody, [0, 1.85, 0.1], [0, 0, 0], [0.25, 1, 1.3]);       // спінны плаўнік
+const tail = new THREE.Group(); tail.position.set(0, 1.3, 0.85); fishBody.add(tail);
+mesh(new THREE.ConeGeometry(0.5, 0.75, 4), 0xff9a3c, tail, [0, 0, 0.35], [-Math.PI / 2, 0, 0], [0.25, 1, 1]);
+for (const sx of [-1, 1]) {
+  mesh(new THREE.SphereGeometry(0.14, 10, 8), 0xffffff, fishBody, [0.36 * sx, 1.48, -0.6]);
+  mesh(new THREE.SphereGeometry(0.07, 8, 6), 0x111111, fishBody, [0.43 * sx, 1.5, -0.66]);
+  // ногі і боты
+  mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.55, 6), 0x2b6e99, fish, [0.22 * sx, 0.68, 0]);
+  mesh(new THREE.CylinderGeometry(0.14, 0.13, 0.42, 8), 0x7a4a21, fish, [0.22 * sx, 0.27, 0]);
+  mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.07, 8), 0xa06a35, fish, [0.22 * sx, 0.47, 0]);
+  mesh(new THREE.BoxGeometry(0.27, 0.14, 0.46), 0x7a4a21, fish, [0.22 * sx, 0.07, -0.1]);
+}
+mesh(new THREE.TorusGeometry(0.1, 0.035, 6, 10), 0xff7a5c, fishBody, [0, 1.22, -0.88]);                          // губкі
+mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.25, 10), 0xf2b632, fishBody, [0, 1.9, -0.25]);                    // панамка
+mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.05, 12), 0xf2b632, fishBody, [0, 1.79, -0.25]);
+mesh(new THREE.ConeGeometry(0.22, 0.4, 3), 0x2a86bf, fishBody, [0.5, 1.15, -0.25], [0, 0, -1.2], [0.3, 1, 1]);   // плаўнік-рука
+
+const rodPivot = new THREE.Group(); rodPivot.position.set(0.55, 1.15, -0.35); fish.add(rodPivot);
+mesh(new THREE.CylinderGeometry(0.018, 0.04, 2.8, 6), 0x4b2e14, rodPivot, [0, 0, -1.4], [-Math.PI / 2, 0, 0]);
+mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.08, 10), 0x999999, rodPivot, [0.06, -0.05, -0.25], [0, 0, Math.PI / 2]);
+const rodTip = new THREE.Object3D(); rodTip.position.set(0, 0, -2.8); rodPivot.add(rodTip);
+rodPivot.rotation.x = 0.55;
+
+// ---------- чалавек ----------
+const human = new THREE.Group();
+scene.add(human);
+mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.9, 8), 0xe85d75, human, [0, 0, 0]);
+mesh(new THREE.SphereGeometry(0.3, 12, 10), 0xf2c9a0, human, [0, 0.72, 0]);
+mesh(new THREE.SphereGeometry(0.32, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0x4a2c1a, human, [0, 0.76, 0.03]);
+for (const sx of [-1, 1]) {
+  mesh(new THREE.SphereGeometry(0.045, 6, 4), 0x111111, human, [0.11 * sx, 0.76, -0.27]);
+  mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.85, 6), 0x3b4a6b, human, [0.14 * sx, -0.85, 0]);
+}
+mesh(new THREE.TorusGeometry(0.07, 0.02, 4, 8, Math.PI), 0x7a2a2a, human, [0, 0.64, -0.27], [0, 0, Math.PI]);  // усмешка
+const arms = [-1, 1].map((sx) => {
+  const g = new THREE.Group(); g.position.set(0.38 * sx, 0.3, 0); human.add(g);
+  mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.7, 6), 0xe85d75, g, [0, -0.3, 0]);
+  mesh(new THREE.SphereGeometry(0.09, 6, 5), 0xf2c9a0, g, [0, -0.68, 0]);
+  return g;
+});
+const ripple = mesh(new THREE.TorusGeometry(0.6, 0.05, 4, 20), 0xe9f8ff, scene, [0, 0.02, 0], [-Math.PI / 2, 0, 0]);
+ripple.castShadow = false;
+
+// ---------- паплавок і лёска ----------
+const bobber = new THREE.Group(); scene.add(bobber);
+mesh(new THREE.SphereGeometry(0.13, 10, 8), 0xff3b30, bobber, [0, 0.03, 0]);
+mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.06, 10), 0xffffff, bobber, [0, -0.02, 0]);
+mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.2, 4), 0xffffff, bobber, [0, 0.2, 0]);
+
+const LINE_N = 18;
+const lineGeo = new THREE.BufferGeometry().setFromPoints(Array.from({ length: LINE_N }, () => V()));
+scene.add(new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x222222 })));
+function updateLine(tip, end, sag) {
+  const a = lineGeo.attributes.position;
+  for (let i = 0; i < LINE_N; i++) {
+    const t = i / (LINE_N - 1);
+    a.setXYZ(i, tip.x + (end.x - tip.x) * t, tip.y + (end.y - tip.y) * t - sag * Math.sin(Math.PI * t), tip.z + (end.z - tip.z) * t);
+  }
+  a.needsUpdate = true;
+  lineGeo.computeBoundingSphere();
+}
+
+// ---------- стан гульні ----------
+const LAKE = { x0: -9, x1: 9, z0: -18, z1: -4 };
+const g = {
+  state: 'aim', t: 0, time: 0,
+  yaw: 0, yawTarget: 0, camYaw: 0,
+  castFrom: V(), castTo: V(), bob: V(),
+  hum: V(3, 0, -10), humTarget: V(), humSpeed: 1.9, scared: 0, attracted: false,
+  reelFrom: V(), landing: V(),
+};
+const tipPos = V();
+
+function pickHumanTarget() {
+  g.humTarget.set(LAKE.x0 + Math.random() * (LAKE.x1 - LAKE.x0), 0, LAKE.z0 + Math.random() * (LAKE.z1 - LAKE.z0));
+}
+pickHumanTarget();
+
+function setHint(text, hot = false) { const h = $('hint'); h.textContent = text; h.classList.toggle('hot', hot); }
+function say(text) { const m = $('msg'); m.textContent = text; m.classList.remove('show'); void m.offsetWidth; m.classList.add('show'); }
+function setState(s) { g.state = s; g.t = 0; }
+
+// ---------- кіраванне ----------
+const ray = new THREE.Raycaster();
+const waterPlane = new THREE.Plane(V(0, 1, 0), 0);
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (g.state === 'aim') {
+    ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+    const hit = ray.ray.intersectPlane(waterPlane, V());
+    if (!hit) return;
+    hit.x = THREE.MathUtils.clamp(hit.x, -11, 11);
+    hit.z = THREE.MathUtils.clamp(hit.z, -20, -3);
+    g.castTo.set(hit.x, 0.05, hit.z);
+    g.yawTarget = THREE.MathUtils.clamp(Math.atan2(-(hit.x - fish.position.x), -(hit.z - fish.position.z)), -1.1, 1.1);
+    setState('windup'); setHint('Закидаємо…');
+  } else if (g.state === 'wait') {
+    setState('retrieve'); g.castFrom.copy(g.bob);
+  } else if (g.state === 'nibble') {
+    say('Зарано! 🙈');
+    g.scared = 1.8; g.attracted = false; g.humSpeed = 3; pickHumanTarget();
+    setState('retrieve'); g.castFrom.copy(g.bob); setHint('…');
+  } else if (g.state === 'bite') {
+    setState('reel'); g.reelFrom.copy(g.hum);
+    const fwd = V(-Math.sin(g.yaw), 0, -Math.cos(g.yaw));
+    g.landing.copy(fish.position).addScaledVector(fwd, 1.7); g.landing.y = 0.3 + 1.28;
+    setHint('Тягни-тягни! 💪'); $('bang').style.display = 'none';
+  }
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- асноўны цыкл ----------
+const clock = new THREE.Clock();
+function loop() {
+  const dt = Math.min(0.05, clock.getDelta());
+  g.time += dt; g.t += dt;
+  const T = g.time;
+
+  // паварот рыбы і камеры
+  g.yaw += (g.yawTarget - g.yaw) * Math.min(1, dt * 8);
+  fish.rotation.y = g.yaw;
+  g.camYaw += (g.yaw - g.camYaw) * Math.min(1, dt * 3);
+  fishBody.position.y = Math.sin(T * 2.5) * 0.03;
+  tail.rotation.y = Math.sin(T * (g.state === 'reel' ? 18 : 4)) * 0.4;
+
+  rodTip.getWorldPosition(tipPos);
+  let sag = 0.4;
+  const humanInWater = !['reel', 'won'].includes(g.state);
+
+  switch (g.state) {
+    case 'aim':
+      rodPivot.rotation.x += (0.55 - rodPivot.rotation.x) * Math.min(1, dt * 6);
+      g.bob.copy(tipPos).y -= 0.7; sag = 0;
+      break;
+    case 'windup': {
+      const p = Math.min(1, g.t / 0.35);
+      rodPivot.rotation.x = 0.55 + 0.9 * p;
+      g.bob.copy(tipPos).y -= 0.7; sag = 0;
+      if (p >= 1) { setState('cast'); g.castFrom.copy(g.bob); }
+      break;
+    }
+    case 'cast': {
+      const p = Math.min(1, g.t / 0.65);
+      rodPivot.rotation.x = 1.45 - 1.2 * Math.min(1, g.t / 0.15);
+      g.bob.lerpVectors(g.castFrom, g.castTo, p);
+      g.bob.y += 2.5 * 4 * p * (1 - p);
+      sag = 0.1;
+      if (p >= 1) { setState('wait'); g.attracted = false; setHint('Чекаємо… (тицни, щоб перекинути)'); }
+      break;
+    }
+    case 'wait': {
+      g.bob.copy(g.castTo); g.bob.y = 0.05 + Math.sin(T * 3) * 0.03;
+      const d = Math.hypot(g.hum.x - g.bob.x, g.hum.z - g.bob.z);
+      if (g.scared <= 0 && d < 2.6) g.attracted = true;
+      if (g.attracted) {
+        g.humTarget.set(g.bob.x, 0, g.bob.z + 0.45); g.humSpeed = 2.4;
+        if (d < 0.75) { setState('nibble'); g.nibbleT = 0.8 + Math.random() * 1.6; setHint('Щось клює… чекай знак!'); }
+      } else if (g.t > 4.5) {
+        say('Не клює… 🤷'); setState('retrieve'); g.castFrom.copy(g.bob);
+      }
+      break;
+    }
+    case 'nibble': {
+      g.bob.copy(g.castTo);
+      g.bob.y = 0.05 - (Math.sin(g.t * 9) > 0.6 ? 0.06 : 0);
+      if (g.t > g.nibbleT) { setState('bite'); setHint('КЛЮЄ! Тицяй швидше!', true); }
+      break;
+    }
+    case 'bite': {
+      g.bob.copy(g.castTo); g.bob.y = 0.05 - 0.15 * Math.abs(Math.sin(g.t * 14));
+      rodPivot.rotation.x = 0.4 + Math.sin(g.t * 30) * 0.05;
+      if (g.t > 0.85) {
+        say('Зірвався! 😅'); $('bang').style.display = 'none';
+        g.scared = 1.8; g.attracted = false; g.humSpeed = 3; pickHumanTarget();
+        setState('retrieve'); g.castFrom.copy(g.bob);
+      }
+      break;
+    }
+    case 'retrieve': {
+      const p = Math.min(1, g.t / 0.45);
+      const end = tipPos.clone(); end.y -= 0.7;
+      g.bob.lerpVectors(g.castFrom, end, p); g.bob.y += 1.2 * 4 * p * (1 - p);
+      sag = 0.05;
+      if (p >= 1) { setState('aim'); setHint('Тицни у воду біля людини, щоб закинути вудку'); }
+      break;
+    }
+    case 'reel': {
+      const p = Math.min(1, g.t / 1.5);
+      rodPivot.rotation.x = 0.55 + 0.9 * Math.min(1, g.t / 0.2) + Math.sin(g.t * 35) * 0.06;
+      g.hum.lerpVectors(g.reelFrom, g.landing, p);
+      const startY = -0.3;
+      g.hum.y = startY + (g.landing.y - startY) * p + 3.5 * 4 * p * (1 - p);
+      sag = 0;
+      if (p >= 1) { setState('won'); setHint('Спіймала! 🎉'); }
+      break;
+    }
+    case 'won':
+      rodPivot.rotation.x += (0.55 - rodPivot.rotation.x) * Math.min(1, dt * 4);
+      g.hum.y = g.landing.y + Math.abs(Math.sin(g.t * 7)) * 0.35;
+      if (g.t > 1.4 && !g.certShown) { g.certShown = true; showCertificate(); }
+      break;
+  }
+
+  // чалавек
+  if (humanInWater) {
+    if (g.scared > 0) g.scared -= dt;
+    if (g.state !== 'bite' && g.state !== 'nibble') {
+      const dx = g.humTarget.x - g.hum.x, dz = g.humTarget.z - g.hum.z, dist = Math.hypot(dx, dz);
+      if (dist < 0.3) { if (!g.attracted) { pickHumanTarget(); g.humSpeed = 1.9; } }
+      else {
+        const step = Math.min(dist, g.humSpeed * dt);
+        g.hum.x += dx / dist * step; g.hum.z += dz / dist * step;
+        const want = Math.atan2(-dx, -dz);
+        let diff = want - human.rotation.y; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        human.rotation.y += diff * Math.min(1, dt * 6);
+      }
+    }
+    g.hum.y = -0.3 + Math.sin(T * 2.2) * 0.05;
+    human.rotation.x = 0; human.rotation.z = 0;
+    const sp = g.state === 'bite' ? 16 : g.state === 'nibble' ? 10 : 6;
+    arms[0].rotation.x = Math.sin(T * sp) * 1.3;
+    arms[1].rotation.x = Math.sin(T * sp + Math.PI) * 1.3;
+    arms[0].rotation.z = arms[1].rotation.z = 0;
+    ripple.visible = true;
+    ripple.position.set(g.hum.x, 0.02, g.hum.z);
+    ripple.scale.setScalar(1 + Math.sin(T * 3) * 0.12);
+  } else {
+    ripple.visible = false;
+    if (g.state === 'reel') {
+      human.rotation.x = g.t * 9;
+      arms[0].rotation.z = -2.2; arms[1].rotation.z = 2.2;
+    } else {
+      human.rotation.x = 0;
+      human.rotation.y = g.yaw + Math.PI;            // твар да рыбы
+      arms[0].rotation.z = -2.6 + Math.sin(g.t * 10) * 0.3;
+      arms[1].rotation.z = 2.6 - Math.sin(g.t * 10) * 0.3;
+      arms[0].rotation.x = arms[1].rotation.x = 0;
+    }
+  }
+  human.position.copy(g.hum);
+
+  if (g.state === 'reel' || g.state === 'won') {
+    g.bob.copy(g.hum); g.bob.y += 0.2;           // паплавок у руках
+  }
+  bobber.position.copy(g.bob);
+  updateLine(tipPos, g.bob, sag);
+
+  // "!" над галавой
+  const bang = $('bang');
+  if (g.state === 'bite') {
+    const v = human.position.clone(); v.y += 1.3; v.project(camera);
+    bang.style.display = 'block';
+    bang.style.left = ((v.x + 1) / 2 * innerWidth) + 'px';
+    bang.style.top = ((1 - v.y) / 2 * innerHeight) + 'px';
+    bang.style.transform = `translate(-50%,-100%) scale(${1 + Math.abs(Math.sin(g.t * 10)) * 0.3})`;
+  }
+
+  // камера ззаду рыбы
+  const back = V(Math.sin(g.camYaw), 0, Math.cos(g.camYaw));
+  const right = V(Math.cos(g.camYaw), 0, -Math.sin(g.camYaw));
+  const portrait = Math.max(0, 1 - camera.aspect);           // на вузкім экране адыходзім далей
+  camera.position.copy(fish.position).addScaledVector(back, 5.5 + portrait * 3)
+    .addScaledVector(right, -1.4).add(V(0, 4.2 + portrait * 1.5, 0));
+  const look = fish.position.clone().addScaledVector(back, -10).addScaledVector(right, 0.6); look.y = 0;
+  camera.lookAt(look);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---------- сертыфікат ----------
+function showCertificate() {
+  const img = $('cImg');
+  img.onerror = () => { img.style.display = 'none'; $('cNoImg').style.display = 'block'; };
+  img.src = CONFIG.image;
+  $('cert').hidden = false;
+  const items = ['🎉', '✨', '🐟', '💙', '🎂', '👢'];
+  for (let i = 0; i < 40; i++) {
+    const el = document.createElement('span');
+    el.className = 'confetti';
+    el.textContent = items[Math.floor(Math.random() * items.length)];
+    el.style.left = Math.random() * 100 + 'vw';
+    el.style.animationDuration = 2 + Math.random() * 2.5 + 's';
+    el.style.animationDelay = Math.random() * 0.8 + 's';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 6000);
+  }
+}
+$('againBtn').addEventListener('click', () => location.reload());
+</script>
+</body>
+</html>
