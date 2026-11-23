@@ -40,8 +40,8 @@
   @keyframes appear { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .card { text-align: center; }
   .icon { font-size: 46px; margin: 6px 0 10px; }
-  #cImg { display: block; width: 100%; max-height: 65vh; object-fit: contain; border-radius: 12px; border: 4px solid #fff; }
-  #cNoImg { display: none; font-size: 80px; padding: 40px 0; border: 4px dashed #fff; border-radius: 12px; background: #ffffff55; }
+  #cText { margin: 4px 0 6px; padding: 28px 16px; border-radius: 16px; background: #fffdf2; border: 4px solid #fff;
+    color: #6a00d9; font-weight: 900; font-size: clamp(26px, 8vw, 40px); }
   .btns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
   .btns button { font: inherit; font-weight: 800; padding: 12px 22px; border-radius: 999px; border: 3px solid #ffe600; cursor: pointer; background: #8b2cff; color: #ffe600; box-shadow: 0 4px 0 #5a00b3; }
   .btns button.alt { background: #e3eef6; color: #1f4d73; }
@@ -65,8 +65,7 @@
 <div id="cert" class="cert" hidden>
   <div class="card">
     <div class="icon">🐸🎣🌈✌️🍄</div>
-    <img id="cImg" alt="">
-    <div id="cNoImg">🖼️</div>
+    <div id="cText">Ось сертифікат 🎁</div>
     <div class="btns"><button id="againBtn">Зіграти ще раз 🎣</button></div>
   </div>
 </div>
@@ -74,11 +73,6 @@
 <script type="module">
 import * as THREE from 'three';
 
-// ====== ТУТ МІНЯЄМО ======
-const CONFIG = {
-  image: 'certificate.jpg',   // картинка сертифіката, покласти поруч з index.html
-};
-// =================================
 
 const $ = (id) => document.getElementById(id);
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -490,9 +484,6 @@ requestAnimationFrame(loop);
 
 // ---------- сертыфікат ----------
 function showCertificate() {
-  const img = $('cImg');
-  img.onerror = () => { img.style.display = 'none'; $('cNoImg').style.display = 'block'; };
-  img.src = CONFIG.image;
   $('cert').hidden = false;
   const items = ['🌈', '🌸', '✌️', '🍄', '🐸', '🌼', '☮️', '💜'];
   for (let i = 0; i < 40; i++) {
